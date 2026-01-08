@@ -851,9 +851,9 @@
                 <div class="setup-screen" id="setupScreen">
                     <div class="welcome-icon">👨‍💻</div>
                     <div class="setup-title">// Enter your username</div>
-                    <div class="info-box" id="firstTimeInfo">
+                    <div class="info-box">
                         <strong>How this works:</strong><br>
-                        Messages are stored in your browser's local storage with <strong>end-to-end encryption</strong>. Both you and your friend need to open this <strong>same URL</strong> and use the <strong>same encryption key</strong> to see each other's messages. The page auto-refreshes every 2 seconds. <strong>Security:</strong> All messages are encrypted - only people with the correct key can read them!
+                        Messages are stored in your browser's local storage. Both you and your friend need to open this <strong>same URL</strong> to see each other's messages. The page auto-refreshes every 2 seconds to show new messages. <strong>Read receipts:</strong> Messages show as "seen" when others view them. <strong>Reactions:</strong> Hover over messages and click the + button to react!
                     </div>
                     <input 
                         type="text" 
@@ -862,23 +862,7 @@
                         placeholder="username"
                         maxlength="20"
                     >
-                    <input 
-                        type="password" 
-                        id="encryptionKeyInput" 
-                        class="setup-input" 
-                        placeholder="encryption key (share with friend)"
-                        maxlength="50"
-                        style="margin-top: 10px;"
-                    >
-                    <div style="display: flex; align-items: center; gap: 10px; margin-top: 15px; color: #d4d4d4; font-size: 13px;">
-                        <input type="checkbox" id="rememberMe" style="width: 18px; height: 18px; cursor: pointer;">
-                        <label for="rememberMe" style="cursor: pointer;">Remember me on this device</label>
-                    </div>
-                    <div style="color: #858585; font-size: 12px; max-width: 400px; text-align: center; margin-top: 10px;">
-                        💡 Choose a secret key and share it privately with your friend. Both must use the same key to read messages.
-                    </div>
                     <button class="setup-btn" onclick="joinChat()">Join Chat</button>
-                    <button class="setup-btn" onclick="clearSavedCredentials()" style="background: #3c3c3c; margin-top: 10px; display: none;" id="clearCredsBtn">Clear Saved Login</button>
                 </div>
 
                 <div class="chat-container hidden" id="chatContainer">
@@ -942,49 +926,24 @@
                     <div class="setting-item">
                         <div class="setting-label">
                             <div class="setting-name">Enable DND</div>
-                            <div class="setting-desc">Mute all notifications</div>
+                            <div class="setting-desc">Mute notifications during specific hours</div>
                         </div>
                         <div class="toggle-switch" id="dndToggle" onclick="toggleDND()">
                             <div class="toggle-slider"></div>
                         </div>
                     </div>
 
-                    <div id="dndModeSettings" class="hidden">
+                    <div id="dndTimeSettings" class="hidden">
                         <div class="setting-item">
                             <div class="setting-label">
-                                <div class="setting-name">DND Mode</div>
-                                <div class="setting-desc">Choose when to mute notifications</div>
+                                <div class="setting-name">DND Time Range</div>
+                                <div class="setting-desc">Set quiet hours</div>
                             </div>
                         </div>
-                        <div style="padding: 0 0 15px 0;">
-                            <label style="display: flex; align-items: center; gap: 10px; padding: 10px; cursor: pointer; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='#3c3c3c'" onmouseout="this.style.background='transparent'">
-                                <input type="radio" name="dndMode" value="forever" id="dndForever" style="width: 16px; height: 16px; cursor: pointer;" onchange="updateDNDMode()">
-                                <div>
-                                    <div style="color: #d4d4d4; font-size: 14px; margin-bottom: 3px;">Mute Forever</div>
-                                    <div style="color: #858585; font-size: 11px;">Disable all notifications indefinitely</div>
-                                </div>
-                            </label>
-                            <label style="display: flex; align-items: center; gap: 10px; padding: 10px; cursor: pointer; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background='#3c3c3c'" onmouseout="this.style.background='transparent'">
-                                <input type="radio" name="dndMode" value="scheduled" id="dndScheduled" checked style="width: 16px; height: 16px; cursor: pointer;" onchange="updateDNDMode()">
-                                <div>
-                                    <div style="color: #d4d4d4; font-size: 14px; margin-bottom: 3px;">Scheduled</div>
-                                    <div style="color: #858585; font-size: 11px;">Mute during specific hours</div>
-                                </div>
-                            </label>
-                        </div>
-                        
-                        <div id="dndTimeSettings" class="hidden">
-                            <div class="setting-item">
-                                <div class="setting-label">
-                                    <div class="setting-name">DND Time Range</div>
-                                    <div class="setting-desc">Set quiet hours</div>
-                                </div>
-                            </div>
-                            <div class="time-picker">
-                                <input type="time" id="dndStart" class="time-input" value="22:00" onchange="saveSettings()">
-                                <span style="color: #858585;">to</span>
-                                <input type="time" id="dndEnd" class="time-input" value="08:00" onchange="saveSettings()">
-                            </div>
+                        <div class="time-picker">
+                            <input type="time" id="dndStart" class="time-input" value="22:00">
+                            <span style="color: #858585;">to</span>
+                            <input type="time" id="dndEnd" class="time-input" value="08:00">
                         </div>
                     </div>
                 </div>
@@ -1036,77 +995,8 @@
         let lastMessageCount = 0;
         let notificationsEnabled = false;
         let dndEnabled = false;
-        let dndMode = 'scheduled'; // 'scheduled' or 'forever'
         let soundEnabled = true;
         let isWindowFocused = true;
-        let encryptionKey = '';
-
-        // Encryption functions using AES-256
-        async function getEncryptionKey(passphrase) {
-            const encoder = new TextEncoder();
-            const keyMaterial = await crypto.subtle.importKey(
-                'raw',
-                encoder.encode(passphrase),
-                { name: 'PBKDF2' },
-                false,
-                ['deriveBits', 'deriveKey']
-            );
-            
-            return await crypto.subtle.deriveKey(
-                {
-                    name: 'PBKDF2',
-                    salt: encoder.encode('chat-room-salt-2024'),
-                    iterations: 100000,
-                    hash: 'SHA-256'
-                },
-                keyMaterial,
-                { name: 'AES-GCM', length: 256 },
-                false,
-                ['encrypt', 'decrypt']
-            );
-        }
-
-        async function encryptMessage(text, key) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(text);
-            const iv = crypto.getRandomValues(new Uint8Array(12));
-            
-            const encrypted = await crypto.subtle.encrypt(
-                { name: 'AES-GCM', iv: iv },
-                key,
-                data
-            );
-            
-            // Combine IV and encrypted data
-            const combined = new Uint8Array(iv.length + encrypted.byteLength);
-            combined.set(iv, 0);
-            combined.set(new Uint8Array(encrypted), iv.length);
-            
-            // Convert to base64
-            return btoa(String.fromCharCode(...combined));
-        }
-
-        async function decryptMessage(encryptedText, key) {
-            try {
-                // Decode from base64
-                const combined = Uint8Array.from(atob(encryptedText), c => c.charCodeAt(0));
-                
-                // Extract IV and encrypted data
-                const iv = combined.slice(0, 12);
-                const encrypted = combined.slice(12);
-                
-                const decrypted = await crypto.subtle.decrypt(
-                    { name: 'AES-GCM', iv: iv },
-                    key,
-                    encrypted
-                );
-                
-                const decoder = new TextDecoder();
-                return decoder.decode(decrypted);
-            } catch (e) {
-                return '[Encrypted - Wrong Key]';
-            }
-        }
 
         // Generate unique room ID from URL
         if (window.location.hash) {
@@ -1120,85 +1010,14 @@
         const READ_RECEIPTS_KEY = 'chat_read_receipts_' + roomId;
         const REACTIONS_KEY = 'chat_reactions_' + roomId;
         const SETTINGS_KEY = 'chat_settings_' + roomId;
-        const CREDENTIALS_KEY = 'chat_credentials_' + roomId;
-        const FIRST_TIME_KEY = 'chat_first_time_' + roomId;
 
         const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '😭', '🎉', '🔥', '💯', '✨', '🚀', '👀', '💪', '🙏', '👏', '😍', '🤔', '😎', '🤩', '😱', '🥳', '😴', '🤯', '🥺', '😤', '🤗', '🙃', '😏', '🤨', '😬', '🤫', '🤭', '🫡', '🥶', '🥵', '😵', '🤢', '🤮', '🤧', '😷', '🤠', '🤑', '🤓', '😈', '👻', '💀', '🤖', '👽', '💩', '🌟', '😘', '😗', '😙', '😚', '💋', '🫂', '🤗', '💑', '💏'];
-
-        // Check for saved credentials on page load
-        window.addEventListener('DOMContentLoaded', () => {
-            loadSavedCredentials();
-            checkFirstTimeUser();
-        });
-
-        function checkFirstTimeUser() {
-            const hasVisited = localStorage.getItem(FIRST_TIME_KEY);
-            const infoBox = document.getElementById('firstTimeInfo');
-            
-            if (hasVisited) {
-                // Not first time - hide the info box
-                infoBox.style.display = 'none';
-            } else {
-                // First time - show the info box
-                infoBox.style.display = 'block';
-            }
-        }
-
-        function markAsReturningUser() {
-            localStorage.setItem(FIRST_TIME_KEY, 'true');
-        }
-
-        function loadSavedCredentials() {
-            const saved = localStorage.getItem(CREDENTIALS_KEY);
-            if (saved) {
-                try {
-                    const credentials = JSON.parse(saved);
-                    document.getElementById('usernameInput').value = credentials.username || '';
-                    document.getElementById('encryptionKeyInput').value = credentials.key || '';
-                    document.getElementById('rememberMe').checked = true;
-                    document.getElementById('clearCredsBtn').style.display = 'block';
-                } catch (e) {
-                    console.error('Error loading credentials:', e);
-                }
-            }
-        }
-
-        function saveCredentials(username, key) {
-            const rememberMe = document.getElementById('rememberMe').checked;
-            if (rememberMe) {
-                const credentials = {
-                    username: username,
-                    key: key,
-                    savedAt: new Date().toISOString()
-                };
-                localStorage.setItem(CREDENTIALS_KEY, JSON.stringify(credentials));
-            } else {
-                localStorage.removeItem(CREDENTIALS_KEY);
-            }
-        }
-
-        function clearSavedCredentials() {
-            if (confirm('Clear saved username and encryption key?')) {
-                localStorage.removeItem(CREDENTIALS_KEY);
-                document.getElementById('usernameInput').value = '';
-                document.getElementById('encryptionKeyInput').value = '';
-                document.getElementById('rememberMe').checked = false;
-                document.getElementById('clearCredsBtn').style.display = 'none';
-                
-                // Show info box again for cleared users
-                document.getElementById('firstTimeInfo').style.display = 'block';
-                localStorage.removeItem(FIRST_TIME_KEY);
-                
-                alert('Saved credentials cleared!');
-            }
-        }
 
         // Load settings
         function loadSettings() {
             const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
             notificationsEnabled = settings.notificationsEnabled || false;
             dndEnabled = settings.dndEnabled || false;
-            dndMode = settings.dndMode || 'scheduled';
             soundEnabled = settings.soundEnabled !== undefined ? settings.soundEnabled : true;
             
             if (notificationsEnabled) {
@@ -1206,21 +1025,10 @@
             }
             if (dndEnabled) {
                 document.getElementById('dndToggle').classList.add('active');
-                document.getElementById('dndModeSettings').classList.remove('hidden');
+                document.getElementById('dndTimeSettings').classList.remove('hidden');
             }
             if (soundEnabled) {
                 document.getElementById('soundToggle').classList.add('active');
-            }
-            
-            // Set DND mode
-            if (dndMode === 'forever') {
-                document.getElementById('dndForever').checked = true;
-                document.getElementById('dndTimeSettings').classList.add('hidden');
-            } else {
-                document.getElementById('dndScheduled').checked = true;
-                if (dndEnabled) {
-                    document.getElementById('dndTimeSettings').classList.remove('hidden');
-                }
             }
             
             if (settings.dndStart) document.getElementById('dndStart').value = settings.dndStart;
@@ -1231,7 +1039,6 @@
             const settings = {
                 notificationsEnabled,
                 dndEnabled,
-                dndMode,
                 soundEnabled,
                 dndStart: document.getElementById('dndStart').value,
                 dndEnd: document.getElementById('dndEnd').value
@@ -1276,31 +1083,16 @@
 
         function toggleDND() {
             const toggle = document.getElementById('dndToggle');
-            const modeSettings = document.getElementById('dndModeSettings');
+            const timeSettings = document.getElementById('dndTimeSettings');
             
             dndEnabled = !dndEnabled;
             
             if (dndEnabled) {
                 toggle.classList.add('active');
-                modeSettings.classList.remove('hidden');
-                updateDNDMode();
+                timeSettings.classList.remove('hidden');
             } else {
                 toggle.classList.remove('active');
-                modeSettings.classList.add('hidden');
-                document.getElementById('dndTimeSettings').classList.add('hidden');
-            }
-            saveSettings();
-        }
-
-        function updateDNDMode() {
-            const timeSettings = document.getElementById('dndTimeSettings');
-            
-            if (document.getElementById('dndForever').checked) {
-                dndMode = 'forever';
                 timeSettings.classList.add('hidden');
-            } else {
-                dndMode = 'scheduled';
-                timeSettings.classList.remove('hidden');
             }
             saveSettings();
         }
@@ -1320,10 +1112,6 @@
         function isInDNDPeriod() {
             if (!dndEnabled) return false;
             
-            // If DND mode is forever, always return true
-            if (dndMode === 'forever') return true;
-            
-            // Otherwise check scheduled time
             const now = new Date();
             const currentTime = now.getHours() * 60 + now.getMinutes();
             
@@ -1574,39 +1362,20 @@
 
         function joinChat() {
             const input = document.getElementById('usernameInput');
-            const keyInput = document.getElementById('encryptionKeyInput');
             const name = input.value.trim();
-            const key = keyInput.value.trim();
             
             if (!name) {
                 alert('Please enter a username');
                 return;
             }
 
-            if (!key) {
-                alert('Please enter an encryption key');
-                return;
-            }
-
-            if (key.length < 6) {
-                alert('Encryption key must be at least 6 characters');
-                return;
-            }
-
             username = name;
-            encryptionKey = key;
-            
-            // Save credentials if remember me is checked
-            saveCredentials(username, encryptionKey);
-            
-            // Mark user as returning user (not first time anymore)
-            markAsReturningUser();
             
             document.getElementById('setupScreen').classList.add('hidden');
             document.getElementById('chatContainer').classList.remove('hidden');
             document.getElementById('inputArea').classList.remove('hidden');
             document.getElementById('currentUser').textContent = username;
-            document.getElementById('roomInfo').textContent = `Room: ${roomId} 🔒`;
+            document.getElementById('roomInfo').textContent = `Room: ${roomId}`;
             
             loadMessages();
             addSystemMessage(`${username} joined the chat`);
@@ -1780,69 +1549,53 @@
             
             if (!message && !pendingFile) return;
             
-            (async () => {
-                const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-                const cryptoKey = await getEncryptionKey(encryptionKey);
-                
-                const messageText = message || (pendingFile ? `Shared ${pendingFile.type.startsWith('image/') ? 'an image' : 'a video'}` : '');
-                const encryptedContent = await encryptMessage(messageText, cryptoKey);
-                
-                const newMessage = {
-                    author: username,
-                    content: encryptedContent,
-                    encrypted: true,
-                    time: getCurrentTime(),
-                    timestamp: Date.now()
-                };
+            const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            
+            const newMessage = {
+                author: username,
+                content: message || (pendingFile ? `Shared ${pendingFile.type.startsWith('image/') ? 'an image' : 'a video'}` : ''),
+                time: getCurrentTime(),
+                timestamp: Date.now()
+            };
 
-                if (pendingFile) {
-                    newMessage.media = pendingFile;
-                }
+            if (pendingFile) {
+                newMessage.media = pendingFile;
+            }
 
-                messages.push(newMessage);
+            messages.push(newMessage);
+            
+            if (messages.length > 100) {
+                messages.shift();
+                const readReceipts = JSON.parse(localStorage.getItem(READ_RECEIPTS_KEY) || '{}');
+                const reactions = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
                 
-                if (messages.length > 100) {
-                    messages.shift();
-                    const readReceipts = JSON.parse(localStorage.getItem(READ_RECEIPTS_KEY) || '{}');
-                    const reactions = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
-                    
-                    const newReceipts = {};
-                    Object.keys(readReceipts).forEach(key => {
-                        const newKey = parseInt(key) - 1;
-                        if (newKey >= 0) newReceipts[newKey] = readReceipts[key];
-                    });
-                    
-                    const newReactions = {};
-                    Object.keys(reactions).forEach(key => {
-                        const newKey = parseInt(key) - 1;
-                        if (newKey >= 0) newReactions[newKey] = reactions[key];
-                    });
-                    
-                    localStorage.setItem(READ_RECEIPTS_KEY, JSON.stringify(newReceipts));
-                    localStorage.setItem(REACTIONS_KEY, JSON.stringify(newReactions));
-                }
+                const newReceipts = {};
+                Object.keys(readReceipts).forEach(key => {
+                    const newKey = parseInt(key) - 1;
+                    if (newKey >= 0) newReceipts[newKey] = readReceipts[key];
+                });
                 
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+                const newReactions = {};
+                Object.keys(reactions).forEach(key => {
+                    const newKey = parseInt(key) - 1;
+                    if (newKey >= 0) newReactions[newKey] = reactions[key];
+                });
                 
-                input.value = '';
-                autoResize(input);
-                clearFilePreview();
-                
-                renderMessages();
-            })();
+                localStorage.setItem(READ_RECEIPTS_KEY, JSON.stringify(newReceipts));
+                localStorage.setItem(REACTIONS_KEY, JSON.stringify(newReactions));
+            }
+            
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+            
+            input.value = '';
+            autoResize(input);
+            clearFilePreview();
+            
+            renderMessages();
         }
 
         const usernameInput = document.getElementById('usernameInput');
-        const keyInput = document.getElementById('encryptionKeyInput');
-        
         usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                keyInput.focus();
-            }
-        });
-
-        keyInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') joinChat();
         });
 
