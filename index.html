@@ -987,23 +987,22 @@
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <div class="settings-section">
-                    <div class="settings-section-title">🔊 Sound</div>
-                    
-                    <div class="setting-item">
-                        <div class="setting-label">
-                            <div class="setting-name">Notification Sound</div>
-                            <div class="setting-desc">Play sound with notifications</div>
-                        </div>
-                        <div class="toggle-switch active" id="soundToggle" onclick="toggleSound()">
-                            <div class="toggle-slider"></div>
+                    <div class="settings-section">
+                        <div class="settings-section-title">🔊 Sound</div>
+                        
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <div class="setting-name">Notification Sound</div>
+                                <div class="setting-desc">Play sound with notifications</div>
+                            </div>
+                            <div class="toggle-switch active" id="soundToggle" onclick="toggleSound()">
+                                <div class="toggle-slider"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
 
         <div class="status-bar">
             <div class="status-left">
@@ -1364,19 +1363,28 @@
             if (!notificationsEnabled || isInDNDPeriod() || isWindowFocused) return;
             
             if (Notification.permission === "granted") {
-                const notification = new Notification(`${message.author} sent a message`, {
-                    body: message.content.substring(0, 100),
-                    icon: '💬',
-                    tag: 'chat-notification',
-                    requireInteraction: false
-                });
-                
-                notification.onclick = function() {
-                    window.focus();
-                    notification.close();
-                };
-                
-                playNotificationSound();
+                // Decrypt message for notification
+                (async () => {
+                    let notificationBody = message.content;
+                    if (message.encrypted) {
+                        const cryptoKey = await getEncryptionKey(encryptionKey);
+                        notificationBody = await decryptMessage(message.content, cryptoKey);
+                    }
+                    
+                    const notification = new Notification(`${message.author} sent a message`, {
+                        body: notificationBody.substring(0, 100),
+                        icon: '💬',
+                        tag: 'chat-notification',
+                        requireInteraction: false
+                    });
+                    
+                    notification.onclick = function() {
+                        window.focus();
+                        notification.close();
+                    };
+                    
+                    playNotificationSound();
+                })();
             }
         }
 
@@ -1596,6 +1604,8 @@
             username = name;
             encryptionKey = key;
             
+            console.log('Joining with key:', encryptionKey); // Debug log
+            
             // Save credentials if remember me is checked
             saveCredentials(username, encryptionKey);
             
@@ -1608,16 +1618,18 @@
             document.getElementById('currentUser').textContent = username;
             document.getElementById('roomInfo').textContent = `Room: ${roomId} 🔒`;
             
-            loadMessages();
-            addSystemMessage(`${username} joined the chat`);
-            document.getElementById('messageInput').focus();
-            
             // Initialize last message count
             const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
             lastMessageCount = messages.length;
             
             // Load settings
             loadSettings();
+            
+            // Initial render
+            renderMessages().then(() => {
+                addSystemMessage(`${username} joined the chat`);
+                document.getElementById('messageInput').focus();
+            });
             
             setInterval(() => {
                 loadMessages();
@@ -1639,12 +1651,35 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        function renderMessages() {
+        // escape HTML to avoid XSS from decrypted/plain messages
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // renderMessages is now async so we can decrypt each message before display
+        async function renderMessages() {
             const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
             const reactions = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
             const container = document.getElementById('chatContainer');
             
             container.innerHTML = '';
+            
+            // derive crypto key once per render if we have an encryptionKey
+            let cryptoKey = null;
+            if (encryptionKey) {
+                try {
+                    cryptoKey = await getEncryptionKey(encryptionKey);
+                } catch (e) {
+                    console.error('Error deriving crypto key:', e);
+                    cryptoKey = null;
+                }
+            }
             
             if (messages.length === 0) {
                 container.innerHTML = `
@@ -1657,7 +1692,8 @@
                     </div>
                 `;
             } else {
-                messages.forEach((msg, index) => {
+                for (let index = 0; index < messages.length; index++) {
+                    const msg = messages[index];
                     const messageDiv = document.createElement('div');
                     messageDiv.className = `message ${msg.author === username ? 'own' : ''}`;
                     
@@ -1680,7 +1716,7 @@
                         if (msg.media.type.startsWith('image/')) {
                             mediaHTML = `
                                 <div class="message-media">
-                                    <img src="${msg.media.data}" alt="${msg.media.name}" onclick="window.open(this.src, '_blank')">
+                                    <img src="${msg.media.data}" alt="${escapeHtml(msg.media.name)}" onclick="window.open(this.src, '_blank')">
                                 </div>
                             `;
                         } else if (msg.media.type.startsWith('video/')) {
@@ -1724,15 +1760,34 @@
                     const reactBtn = !msg.deleted ? 
                         `<button class="react-btn" onclick="showReactionPicker(${index}, this)">+</button>` : '';
 
+                    // Decrypt message content when necessary
+                    let displayContent = msg.content;
+                    if (msg.deleted) {
+                        displayContent = msg.content; // already set to 'This message was deleted'
+                    } else if (msg.encrypted) {
+                        if (!encryptionKey) {
+                            displayContent = '[Encrypted - join with the correct key to view]';
+                        } else if (cryptoKey) {
+                            displayContent = await decryptMessage(msg.content, cryptoKey);
+                        } else {
+                            displayContent = '[Encrypted - Wrong Key]';
+                        }
+                    } else {
+                        displayContent = msg.content;
+                    }
+
+                    // Escape the decrypted content and preserve line breaks
+                    const safeContentHTML = escapeHtml(displayContent).replace(/\n/g, '<br>');
+
                     messageDiv.innerHTML = `
                         <div class="message-avatar ${avatarClass}">${initials}</div>
                         <div class="message-content">
                             <div class="message-header">
-                                <span class="message-author">${msg.author}</span>
-                                <span class="message-time">${msg.time}</span>
+                                <span class="message-author">${escapeHtml(msg.author)}</span>
+                                <span class="message-time">${escapeHtml(msg.time)}</span>
                             </div>
                             <div class="message-text ${msg.deleted ? 'deleted' : ''}">
-                                ${msg.content}
+                                ${safeContentHTML}
                                 ${reactBtn}
                                 ${deleteBtn}
                                 ${!msg.deleted ? `<div class="reaction-picker">
@@ -1748,7 +1803,7 @@
                     `;
                     
                     container.appendChild(messageDiv);
-                });
+                }
             }
             
             container.scrollTop = container.scrollHeight;
@@ -1771,65 +1826,63 @@
             }
             
             lastMessageCount = messages.length;
-            renderMessages();
+            renderMessages(); // async render; we don't need to await here
         }
 
-        function sendMessage() {
+        async function sendMessage() {
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             
             if (!message && !pendingFile) return;
             
-            (async () => {
-                const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-                const cryptoKey = await getEncryptionKey(encryptionKey);
-                
-                const messageText = message || (pendingFile ? `Shared ${pendingFile.type.startsWith('image/') ? 'an image' : 'a video'}` : '');
-                const encryptedContent = await encryptMessage(messageText, cryptoKey);
-                
-                const newMessage = {
-                    author: username,
-                    content: encryptedContent,
-                    encrypted: true,
-                    time: getCurrentTime(),
-                    timestamp: Date.now()
-                };
+            const messages = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            const cryptoKey = await getEncryptionKey(encryptionKey);
+            
+            const messageText = message || (pendingFile ? `Shared ${pendingFile.type.startsWith('image/') ? 'an image' : 'a video'}` : '');
+            const encryptedContent = await encryptMessage(messageText, cryptoKey);
+            
+            const newMessage = {
+                author: username,
+                content: encryptedContent,
+                encrypted: true,
+                time: getCurrentTime(),
+                timestamp: Date.now()
+            };
 
-                if (pendingFile) {
-                    newMessage.media = pendingFile;
-                }
+            if (pendingFile) {
+                newMessage.media = pendingFile;
+            }
 
-                messages.push(newMessage);
+            messages.push(newMessage);
+
+            if (messages.length > 100) {
+                messages.shift();
+                const readReceipts = JSON.parse(localStorage.getItem(READ_RECEIPTS_KEY) || '{}');
+                const reactions = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
                 
-                if (messages.length > 100) {
-                    messages.shift();
-                    const readReceipts = JSON.parse(localStorage.getItem(READ_RECEIPTS_KEY) || '{}');
-                    const reactions = JSON.parse(localStorage.getItem(REACTIONS_KEY) || '{}');
-                    
-                    const newReceipts = {};
-                    Object.keys(readReceipts).forEach(key => {
-                        const newKey = parseInt(key) - 1;
-                        if (newKey >= 0) newReceipts[newKey] = readReceipts[key];
-                    });
-                    
-                    const newReactions = {};
-                    Object.keys(reactions).forEach(key => {
-                        const newKey = parseInt(key) - 1;
-                        if (newKey >= 0) newReactions[newKey] = reactions[key];
-                    });
-                    
-                    localStorage.setItem(READ_RECEIPTS_KEY, JSON.stringify(newReceipts));
-                    localStorage.setItem(REACTIONS_KEY, JSON.stringify(newReactions));
-                }
+                const newReceipts = {};
+                Object.keys(readReceipts).forEach(key => {
+                    const newKey = parseInt(key) - 1;
+                    if (newKey >= 0) newReceipts[newKey] = readReceipts[key];
+                });
                 
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+                const newReactions = {};
+                Object.keys(reactions).forEach(key => {
+                    const newKey = parseInt(key) - 1;
+                    if (newKey >= 0) newReactions[newKey] = reactions[key];
+                });
                 
-                input.value = '';
-                autoResize(input);
-                clearFilePreview();
-                
-                renderMessages();
-            })();
+                localStorage.setItem(READ_RECEIPTS_KEY, JSON.stringify(newReceipts));
+                localStorage.setItem(REACTIONS_KEY, JSON.stringify(newReactions));
+            }
+            
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+            
+            input.value = '';
+            autoResize(input);
+            clearFilePreview();
+            
+            await renderMessages();
         }
 
         const usernameInput = document.getElementById('usernameInput');
